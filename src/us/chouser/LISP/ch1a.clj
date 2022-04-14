@@ -144,3 +144,107 @@
 
 (assert (= 'a (evaluate '(if true (quote a) 2)         env-init)))
 (assert (= 5  (evaluate `(if ~the-false-value 1 5)     env-init)))
+
+
+;; What if functions can see a (static?) global environment?
+
+(def env-global
+  (extend-env ()
+              '(list +)
+              (list identity
+                    #(apply + %))))
+
+(defn make-function
+  "p16"
+  [variables body env]
+  (fn [values]
+    (eprogn body (extend-env env-global variables values))))
+
+(assert (= 7 (evaluate '(+ 4 3)                  env-global)))
+(assert (= '(a 3) (evaluate '(list (quote a) 3)  env-global)))
+
+(assert "WRONG: No such binding a"
+        (with-out-str
+          (evaluate
+           '((lambda (a)
+                     ((lambda (b)
+                              (list a b))
+                      (+ 2 a)))
+             1)
+           env-global)))
+
+
+;; Dynamic scope
+
+(declare d-evaluate)
+
+(defn d-eprogn
+  "Dynamic version of eprogn somehow never mentioned in chapter 1?"
+  [exps env]
+  (if (seq exps)
+    (if (next exps)
+      (do
+        (d-evaluate (first exps) env)
+        (recur (next exps) env))
+      (d-evaluate (first exps) env))
+    ()))
+
+(defn d-evlis
+  "Dynamic version of evlis also not mentioned in chapter 1?"
+  [exps env]
+  (if (seq? exps)
+    (let [argument1 (d-evaluate (first exps) env)]
+      (cons argument1 (d-evlis (next exps) env)))
+    ()))
+
+(defn d-invoke
+  "p18"
+  [f args env]
+  (prn :invoke args :env env)
+  (if (fn? f)
+    (f args env)
+    (wrong "Not a function" f)))
+
+(defn d-make-function
+  "p18"
+  [variables body def-env]
+  (fn [values current-env]
+    (let [ext (extend-env current-env variables values)]
+      (prn :ext ext)
+      (d-eprogn body ext))))
+
+(def d-env-global
+  (extend-env ()
+              '(list +)
+              (list (fn [args env] args)
+                    (fn [args env] (apply + args)))))
+
+(defn d-evaluate
+  "p17"
+  [e env]
+  (prn :eval env)
+  (if-not (seq? e)
+    (cond
+      (symbol? e) (lookup e env)
+      (or (number? e) (string? e) (char? e) (boolean? e) (vector? e)) e
+      :else (wrong "Cannot evaluate" e))
+    (case (first e)
+      quote (second e)
+      if (if (d-evaluate (nth e 1) env)
+           (d-evaluate (nth e 2) env)
+           (d-evaluate (nth e 3) env))
+      begin (d-eprogn (next e) env)
+      set! (update! (nth e 1) env (d-evaluate (nth e 2) env))
+      lambda (d-make-function (second e) (nnext e) env)
+      #_else (d-invoke (d-evaluate (first e) env)
+                       (d-evlis (next e) env)
+                       env))))
+
+(assert (= '(1 3))
+        (d-evaluate
+         '((lambda (a)
+                   ((lambda (b)
+                            (list a b))
+                    (+ 2 a)))
+           1)
+         d-env-global))
