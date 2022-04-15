@@ -200,7 +200,6 @@
 (defn d-invoke
   "p18"
   [f args env]
-  (prn :invoke args :env env)
   (if (fn? f)
     (f args env)
     (wrong "Not a function" f)))
@@ -210,7 +209,6 @@
   [variables body def-env]
   (fn [values current-env]
     (let [ext (extend-env current-env variables values)]
-      (prn :ext ext)
       (d-eprogn body ext))))
 
 (def d-env-global
@@ -222,7 +220,6 @@
 (defn d-evaluate
   "p17"
   [e env]
-  (prn :eval env)
   (if-not (seq? e)
     (cond
       (symbol? e) (lookup e env)
@@ -240,11 +237,66 @@
                        (d-evlis (next e) env)
                        env))))
 
-(assert (= '(1 3))
-        (d-evaluate
-         '((lambda (a)
-                   ((lambda (b)
-                            (list a b))
-                    (+ 2 a)))
-           1)
-         d-env-global))
+(assert (= '(1 3)
+           (d-evaluate
+            '((lambda (a)
+                      ((lambda (b)
+                               (list a b))
+                       (+ 2 a)))
+              1)
+            d-env-global)))
+
+(assert "WRONG: No such binding a"
+        (with-out-str
+          (d-evaluate
+           '(((lambda (a)
+                      (lambda (b) (list a b)))
+              1)
+             2)
+           d-env-global)))
+
+;; Proper lexical scoping
+
+(defn make-function
+  "p19"
+  [variables body env]
+  (fn [values]
+    (eprogn body (extend-env env variables values))))
+
+(assert (= '(1 2)
+           (evaluate
+            '(((lambda (a)
+                       (lambda (b) (list a b)))
+               1)
+              2)
+            env-global)))
+
+
+
+(def env-global
+  (extend-env ()
+              '(list + define)
+              (list identity
+                    #(apply + %)
+                    #())))
+
+;; No definition for `define` is given in the book, but I think it implies a
+;; mutable environment which we don't have (only mutable vars within the env).
+;; So, here's a kind of `let` macro I can use to set up the next example from
+;; the book.
+(defn m-let [bindings & body]
+  (if (empty? bindings)
+    `(~'begin ~@body)
+    (let [[sym expr] (first bindings)]
+      `((~'lambda (~sym)
+                ~(apply m-let (rest bindings) body))
+        ~expr))))
+
+(def p20-example
+  (m-let '((y 0)
+           (foo (lambda (x) (list x y)))
+           (bar (lambda (y) (foo 1991))))
+         '(list (bar 100) (foo 3))))
+
+(assert (= '((1991 0)   (3 0)) (evaluate   p20-example env-global)))
+(assert (= '((1991 100) (3 0)) (d-evaluate p20-example d-env-global)))
