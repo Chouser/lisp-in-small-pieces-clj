@@ -300,3 +300,146 @@
 
 (assert (= '((1991 0)   (3 0)) (evaluate   p20-example env-global)))
 (assert (= '((1991 100) (3 0)) (d-evaluate p20-example d-env-global)))
+
+
+(defn d-evaluate
+  "p20"
+  [e env]
+  (if-not (seq? e)
+    (cond
+      (symbol? e) (lookup e env)
+      (or (number? e) (string? e) (char? e) (boolean? e) (vector? e)) e
+      :else (wrong "Cannot evaluate" e))
+    (case (first e)
+      quote (second e)
+      if (if (d-evaluate (nth e 1) env)
+           (d-evaluate (nth e 2) env)
+           (d-evaluate (nth e 3) env))
+      begin (d-eprogn (next e) env)
+      set! (update! (nth e 1) env (d-evaluate (nth e 2) env))
+      let (d-evaluate (apply m-let (rest e)) env)
+      lambda (d-make-function (second e) (nnext e) env)
+      #_else (d-invoke (d-evaluate (first e) env)
+                       (d-evlis (next e) env)
+                       env))))
+
+(assert (= '((1991 100) (3 0))
+           (d-evaluate '(let ((y 0)
+                              (foo (lambda (x) (list x y)))
+                              (bar (lambda (y) (foo 1991))))
+                          (list (bar 100) (foo 3)))
+                       d-env-global)))
+
+(assert (= '(1 3)
+           (d-evaluate '(let ((a 1))
+                          ((let ((a 2))
+                             (lambda (b)
+                                     (list a b)))
+                           3))
+                       d-env-global)))
+
+(defn d-make-closure
+  "p22"
+  [f env]
+  (fn [values current-env]
+    (f values env)))
+
+(defn d-evaluate
+  "p21"
+  [e env]
+  (if-not (seq? e)
+    (cond
+      (symbol? e) (lookup e env)
+      (or (number? e) (string? e) (char? e) (boolean? e) (vector? e)) e
+      :else (wrong "Cannot evaluate" e))
+    (case (first e)
+      quote (second e)
+      if (if (d-evaluate (nth e 1) env)
+           (d-evaluate (nth e 2) env)
+           (d-evaluate (nth e 3) env))
+      begin (d-eprogn (next e) env)
+      set! (update! (nth e 1) env (d-evaluate (nth e 2) env))
+      let (d-evaluate (apply m-let (rest e)) env)
+
+      function ; Syntax: (function (lambda variables body))
+      (let [f (second e)
+            fun (d-make-function (second f) (nnext f) env)]
+        (d-make-closure fun env))
+
+      lambda (d-make-function (second e) (nnext e) env)
+      #_else (d-invoke (d-evaluate (first e) env)
+                       (d-evlis (next e) env)
+                       env))))
+
+(assert (= '(2 3)
+           (d-evaluate '(let ((a 1))
+                          ((let ((a 2))
+                             (function (lambda (b)
+                                               (list a b))))
+                           3))
+                       d-env-global)))
+
+;; Since I'm using Clojure's reader, there's no "place" share between multiple
+;; uses of a symbol on which to store properties, like Scheme's `putprop` does.
+;; So instead I'll simulate that by have a my own map of symbols to `apval`
+;; properties in a mutable place:
+(def *apval (atom {'list (fn [args env] args)
+                   '+ (fn [args env] (apply + args))}))
+
+(declare s-evaluate)
+
+(defn s-lookup
+  "p24"
+  [id env]
+  (get @*apval id))
+
+(defn s-update!
+  "p24"
+  [id env value]
+  (swap! *apval assoc id value))
+
+(defn s-make-function
+  "p24"
+  [variables body env]
+  (fn [values current-env]
+    (let [old-bindings (mapv (fn [var val]
+                               (let [old-value (get @*apval var)]
+                                 (swap! *apval assoc var val)
+                                 [var old-value]))
+                             variables
+                             values)
+          result (s-eprogn body current-env)]
+      (run! (fn [[var val]] (swap! *apval assoc var val))
+            old-bindings)
+      result)))
+
+(defn s-evaluate
+  "Shallow dynamic binding."
+  [e env]
+  (if-not (seq? e)
+    (cond
+      (symbol? e) (s-lookup e env)
+      (or (number? e) (string? e) (char? e) (boolean? e) (vector? e)) e
+      :else (wrong "Cannot evaluate" e))
+    (case (first e)
+      quote (second e)
+      if (if (not= (s-evaluate (nth e 1) env)
+                   the-false-value)
+           (s-evaluate (nth e 2) env)
+           (s-evaluate (nth e 3) env))
+      begin (last (map #(s-evaluate % env) (next e)))
+      set! (s-update! (nth e 1) env (s-evaluate (nth e 2) env))
+      let (s-evaluate (apply m-let (rest e)) env)
+      lambda (s-make-function (second e) (nnext e) env)
+      #_else (d-invoke (s-evaluate (first e) env)
+                       (doall (map #(s-evaluate % env) (next e)))
+                       env))))
+
+(assert (= '((1991 100) (3 0))
+           (s-evaluate
+            '(let ((y 0)
+                   (foo (lambda (x) (list x y)))
+                   (bar (lambda (y) (foo 1991))))
+                  (list (bar 100) (foo 3)))
+            env-global)))
+
