@@ -43,6 +43,7 @@
   "extend, p14.
   This version doesn't support dotted final variable (like `&` or `rest`)"
   [env variables values]
+  #_{:post [(do (prn :post-extend variables values %) true)]}
   (cond
     (seq? variables) (if (seq? values)
                        (cons (list (first variables) (atom (first values)))
@@ -443,3 +444,59 @@
                   (list (bar 100) (foo 3)))
             env-global)))
 
+
+;; section 1.7 p 25
+
+(def env-global env-init)
+
+(defn definitial*
+  ([var-name]
+   (definitial* var-name 'void))  ;; Why `void`?
+  ([var-name var-value]
+   #_{:post [(do (prn :def var-name '-- env-global) true)]}
+   (alter-var-root #'env-global extend-env (list var-name) (list var-value))))
+
+(defmacro definitial [var-name & args]
+  `(definitial* '~var-name ~@args))
+
+(defn defprimitive* [var-name var-value arity]
+  (definitial* var-name
+    (fn [values]
+      (if (= arity (count values))
+        (apply var-value values)
+        (wrong "Incorrect arity"
+               (list var-name values))))))
+
+(defmacro defprimitive [var-name var-value arity]
+  `(defprimitive* '~var-name ~var-value ~arity))
+
+(definitial t true)
+(definitial f the-false-value)
+(definitial null ())  ;; nil isn't read as a symbol, so use null instead of adding an evaluate rule
+
+(assert (= () (evaluate 'null env-global)))
+
+(definitial foo)
+(definitial bar)
+(definitial fib)
+(definitial fact)
+
+(defprimitive cons cons 2)
+(defprimitive car first 1)
+(defprimitive set-cdr! reset! 2)  ;; probably not the correct definition for Clojure
+(defprimitive + + 2)
+(defprimitive eq? = 2)
+(defprimitive < < 2)
+
+(assert (= '(7 true)
+           (evaluate '(cons (car (cons (+ 2 5) 'nil))
+                            (cons (< 1 2) 'nil))
+                     env-global)))
+
+(defn chapter1-scheme []
+  (let [in (read)
+        out (evaluate in env-global)]
+    (prn in)
+    (prn '=> out)
+    (when (not= 'exit out)
+      (recur))))
