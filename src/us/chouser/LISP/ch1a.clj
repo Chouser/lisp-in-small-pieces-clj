@@ -399,6 +399,16 @@
   [id env value]
   (swap! *apval assoc id value))
 
+(defn s-eprogn
+  [exps env]
+  (if (seq exps)
+    (if (next exps)
+      (do
+        (s-evaluate (first exps) env)
+        (recur (next exps) env))
+      (s-evaluate (first exps) env))
+    empty-begin))
+
 (defn s-make-function
   "p24"
   [variables body env]
