@@ -65,11 +65,11 @@
     (wrong "Not a function" f)))
 
 (defn evaluate-application
-  "p34"
+  "p34, p35"
   [f args env fenv]
   (cond
     (symbol? f)
-    (invoke (lookup f fenv) args)
+    ((lookup f fenv) args)
 
     (and (seq? f) (= (first f) 'lambda))
     (let [[_ params & body] f]
@@ -97,6 +97,16 @@
                     env
                     (f-evaluate (nth e 2) env fenv))
       lambda (f-make-function (second e) (nnext e) env fenv)
+      flet (f-eprogn (nnext e)
+                     env
+                     (extend-env fenv
+                                 (map first (second e))
+                                 (map (fn [[_ vars & body]]
+                                        (f-make-function vars body env fenv))
+                                      (second e))))
+      function (cond
+                 (symbol? (second e)) (lookup (second e) fenv)
+                 :else (wrong "Incorrect function" (second e)))
       #_else (evaluate-application (first e)
                                    (f-evlis (next e) env fenv)
                                    env
@@ -129,6 +139,47 @@
 
 (defprimitive* 'car first 1)
 (defprimitive* 'cons cons 2)
+(defprimitive* '< < 2)
+(defprimitive* '> > 2)
+(defprimitive* '+ + 2)
+(defprimitive* '* * 2)
+
+(assert (= 9
+           (f-evaluate '(flet ((square (x) (* x x)))
+                              (square 3))
+                       env-global
+                       fenv-global)))
+
+(defprimitive* 'funcall
+  (fn [& args]
+    (if (> (count args) 1)
+      (invoke (first args) (rest args))
+      (wrong "Incorrect arity" 'funcall)))
+  2)
+
+(defprimitive* 'funcall2
+  (fn [& args]
+    (if (> (count args) 1)
+      (invoke (first args) (rest args))
+      (wrong "Incorrect arity" 'funcall)))
+  3)
+
+(assert (= 81
+           (f-evaluate '(funcall (flet ((square (x) (* x x)))
+                                       (lambda (x) (square (square x))))
+                                 3)
+                       env-global
+                       fenv-global)))
+
+(assert (= '(7 12)
+           (f-evaluate '(flet ((wat (a b)
+                                    (funcall2 (if (< a b)
+                                                (function +)
+                                                (function *))
+                                              a b)))
+                              (cons (wat 3 4) (cons (wat 4 3) '())))
+                       env-global
+                       fenv-global)))
 
 (defn a-certain-lisp2 []
   (let [string (read)]
