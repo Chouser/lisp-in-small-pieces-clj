@@ -1,6 +1,6 @@
 (ns us.chouser.LISP.ch2
   (:require [clojure.test :refer [is]]
-            [us.chouser.LISP.test-lisp2 :refer [apply-tests]]))
+            [us.chouser.LISP.test-lisp2 :as t]))
 
 (defn wrong [msg & args]
   (apply println "WRONG:" msg (map pr-str args)))
@@ -114,9 +114,6 @@
                                    env
                                    fenv))))
 
-(apply-tests
- {:env ()
-  :fenv ()
-  :extend-env extend-env
-  :invoke invoke
-  :f-evaluate f-evaluate})
+(doto (t/kwmap extend-env invoke f-evaluate
+               :env () :fenv ())
+  t/main-tests)

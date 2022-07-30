@@ -1,7 +1,7 @@
 (ns us.chouser.LISP.ch2.4
   "A Lisp2 with an f-lookup that always returns in constant time. p41-42"
   (:require [clojure.test :refer [is]]
-            [us.chouser.LISP.test-lisp2 :refer [apply-tests]]))
+            [us.chouser.LISP.test-lisp2 :as t]))
 
 (defn wrong [msg & args]
   (apply println "WRONG:" msg (map pr-str args)))
@@ -18,12 +18,6 @@
   (if (empty? exps)
     ()
     (last (map #(f-evaluate % env fenv) exps))))
-
-(defn f-make-function
-  "p34"
-  [variables body env fenv]
-  (fn [values]
-    (f-eprogn body (extend-env env variables values) fenv)))
 
 (defn lookup
   "p13"
@@ -68,6 +62,12 @@
                          env
                          (wrong "Too much values"))))
 
+(defn f-make-function
+  "p34"
+  [variables body env fenv]
+  (fn [values]
+    (f-eprogn body (extend-env env variables values) fenv)))
+
 (defn invoke
   "p15"
   [f args]
@@ -103,6 +103,15 @@
                     env
                     (f-evaluate (nth e 2) env fenv))
       lambda (f-make-function (second e) (nnext e) env fenv)
+      let (let [[_let bindings & body] e]
+            (if (empty? bindings)
+              (f-eprogn body env fenv)
+              (let [[sym expr] (first bindings)]
+                (f-evaluate `((~'lambda (~sym)
+                               (~'let ~(rest bindings)
+                                ~@body))
+                              ~expr)
+                            env fenv))))
       function (cond
                  (symbol? (second e))
                  , (f-lookup (second e) fenv)
@@ -132,9 +141,8 @@
                                    env
                                    fenv))))
 
-(apply-tests
- {:env ()
-  :fenv ()
-  :extend-env extend-env
-  :invoke invoke
-  :f-evaluate f-evaluate})
+(doto (t/kwmap extend-env invoke f-evaluate
+               :env () :fenv ())
+  t/main-tests
+  t/late-missing-fn-test
+  t/let-tests)
