@@ -1,10 +1,6 @@
 (ns us.chouser.LISP.test-lisp2
   (:require [clojure.test :as t :refer [is]]))
 
-(defmacro kwmap [& args]
-  (let [[syms kvs] (split-with symbol? args)]
-    (apply array-map (concat (interleave (map keyword syms) syms) kvs))))
-
 (defn wrong [msg & args]
   (apply println "WRONG:" msg (map pr-str args)))
 
@@ -39,7 +35,7 @@
       (fn [& args]
         (if (> (count args) 1)
           (invoke (first args) (rest args))
-          (wrong "Incorrect arity" 'funcall)))
+          (wrong "Incorrect arity" 'funcall2)))
       3)
     [*env *fenv]))
 
@@ -103,3 +99,29 @@
                             (set! a 3))
                           a)
                        @*env @*fenv)))))
+
+(defn extend-env-tests [{:keys [env extend-env lookup] :as lisp}]
+  (let [env (extend-env env '(a b c) '(1 2 3))]
+    (is (= 1 (lookup 'a env)))
+    (is (= 3 (lookup 'c env))))
+  (let [env (extend-env env '(a b & c) '(1 2 3 4))]
+    (is (= 1 (lookup 'a env)))
+    (is (= '(3 4) (lookup 'c env))))
+  (let [env (extend-env env '(a b & c) '(1 2 3))]
+    (is (= 1 (lookup 'a env)))
+    (is (= '(3) (lookup 'c env))))
+  (let [env (extend-env env '(a b & c) '(1 2))]
+    (is (= 1 (lookup 'a env)))
+    (is (= '() (lookup 'c env))))
+  (let [env (extend-env env '(& a) '(1 2))]
+    (is (= '(1 2) (lookup 'a env)))
+    (is (= "WRONG: No such binding c\n"
+           (with-out-str (lookup 'c env)))))
+  (let [env (extend-env env '(& a) '())]
+    (is (= '() (lookup 'a env))))
+  (is (= "WRONG: Too less values\n"
+         (with-out-str (extend-env env '(a b c) '(1 2)))))
+  (is (= "WRONG: Too less values\n"
+         (with-out-str (extend-env env '(a b & c) '(1)))))
+  (is (= "WRONG: Too much values\n"
+         (with-out-str (extend-env env '(a b) '(1 2 3))))))
