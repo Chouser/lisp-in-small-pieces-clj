@@ -74,7 +74,7 @@
   (fn [values denv]
     (df-eprogn body (extend-env env variables values) fenv denv)))
 
-(defn df-do-flet [bindings body env fenv]
+(defn df-do-flet [bindings body env fenv denv]
   (df-eprogn body env
              (extend-env fenv
                          (map first bindings)
@@ -115,7 +115,7 @@
     (['function (sym :guard symbol?)] :seq) (df-lookup sym fenv)
     (['function (['lambda a & b] :seq)] :seq) (df-make-function a b env fenv)
     (['function & _] :seq) (wrong "Incorrect function" (second e))
-    (['flet bindings & body] :seq) (df-do-flet bindings body env fenv)
+    (['flet bindings & body] :seq) (df-do-flet bindings body env fenv denv)
     (['labels defs] :seq) (wrong "TBD: lables") #_(f-do-labels defs env fenv)
     (['dynamic k] :seq) (lookup k denv)
     (['dynamic-set! k v] :seq) (update! k denv (df-evaluate v env fenv denv))
