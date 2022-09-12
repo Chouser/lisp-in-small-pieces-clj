@@ -59,7 +59,8 @@
   (df-eprogn body env fenv
              (extend-env denv
                          (map first bindings)
-                         (map #(df-evaluate % env fenv denv) bindings))))
+                         (map #(df-evaluate (second %) env fenv denv)
+                              bindings))))
 
 (defn df-evaluate-application [f args env fenv denv]
   (match f
@@ -199,13 +200,19 @@
                       @*env @*fenv denv))))
 
 (do ;; let-tests
-  (is (= '2
+  (is (= 2
          (df-evaluate '(let ((a 2))
                          a)
                       @*env @*fenv denv)))
-  (is (= '3
+  (is (= 3
          (df-evaluate '(let ((a 1))
                          (let ((b 2))
                            (set! a 3))
                          a)
+                      @*env @*fenv denv)))
+
+  (is (= 15
+         (df-evaluate '(flet ((add-some (x) (+ x (dynamic *some*))))
+                             (dynamic-let ((*some* 10))
+                                          (add-some 5)))
                       @*env @*fenv denv))))
