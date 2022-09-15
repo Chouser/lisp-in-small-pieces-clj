@@ -1,8 +1,13 @@
 (ns us.chouser.LISP.ch2.5.2
   (:require [clojure.core.reducers :as r]
             [clojure.core.match :refer [match]]
-            [us.chouser.spread :refer [k.]]
             [clojure.test :as t :refer [is]]))
+
+;; This version introduces cl-lookup to look for base symbols in both the
+;; lexical and dynamic environment, while still keeping the function environment.
+;; It's so easy to get confused -- I was sure for a while that I needed to use a
+;; form of cl-lookup for functions, but that's not right as this version doesn't
+;; have a environment dynamic environment for functions.
 
 (def env-global {})
 (def fenv-global {})
