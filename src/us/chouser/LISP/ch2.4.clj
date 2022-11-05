@@ -1,6 +1,7 @@
 (ns us.chouser.LISP.ch2.4
   "A Lisp2 with an f-lookup that always returns in constant time. p41-42"
   (:require [clojure.test :refer [is]]
+            [us.chouser.spread :refer [k.]]
             [us.chouser.LISP.test-lisp2 :as t]))
 
 (defn wrong [msg & args]
@@ -120,6 +121,8 @@
                                     (nnext (second e))
                                     env fenv)
                  :else (wrong "Incorrect function" (second e)))
+      funcall (invoke (f-evaluate (second e) env fenv)
+                      (f-evlis (nnext e) env fenv))
       flet (f-eprogn (nnext e)
                      env
                      (extend-env fenv
@@ -135,14 +138,71 @@
                           new-fenv
                           (f-make-function (second def)
                                            (nnext def)
-                                           env new-fenv))))
+                                           env new-fenv)))
+               (f-eprogn (nnext e) env new-fenv))
       #_else (evaluate-application (first e)
                                    (f-evlis (next e) env fenv)
                                    env
                                    fenv))))
 
-(doto (t/kwmap extend-env invoke f-evaluate
-               :env () :fenv ())
+(doto (k. extend-env invoke f-evaluate
+          :env () :fenv ())
   t/main-tests
   t/late-missing-fn-test
   t/let-tests)
+
+;;=== Global environment
+
+(def env-global {})
+(def fenv-global {})
+
+(defn set-global [env-var var-name & value-seq]
+  (alter-var-root
+   env-var extend-env (list var-name) (if (seq value-seq)
+                                        value-seq
+                                        (list 'void))));; Why `void`?
+
+(def definitial* (partial set-global #'env-global))
+
+(definitial* 't true)
+(definitial* 'f 'the-false-value)
+(definitial* 'null ())  ;; nil isn't read as a symbol, so use null instead of adding an evaluate rule
+
+(def definitial-function* "p38"
+  (partial set-global #'fenv-global))
+
+(defn defprimitive* [var-name var-value arity]
+  (definitial-function* var-name
+    (fn [values]
+      (if (= arity (count values))
+        (apply var-value values)
+        (wrong "Incorrect arity"
+               (list var-name values))))))
+
+(defprimitive* 'car first 1)
+(defprimitive* 'cdr rest 1)
+(defprimitive* 'cons cons 2)
+(defprimitive* '= = 2)
+(defprimitive* '< < 2)
+(defprimitive* '> > 2)
+(defprimitive* '+ + 2)
+(defprimitive* '- - 2)
+(defprimitive* '* * 2)
+(defprimitive* list list 2)
+
+(defn eval* [expr]
+  (f-evaluate expr env-global fenv-global))
+
+;; p57
+(is (= 720
+       (eval* '(labels ((fact (n) (if (= n 0)
+                                    1
+                                    (* n (fact (- n 1))))))
+                       (fact 6)))))
+
+(is (= 't
+       (eval*
+        '(funcall (labels ((even? (n) (if (= n 0) 't (odd? (- n 1))))
+                           (odd? (n) (if (= n 0) 'f (even? (- n 1)))))
+                          (function even?))
+                  4))))
