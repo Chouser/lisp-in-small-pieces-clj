@@ -80,12 +80,13 @@
                                (f-make-function vars body env fenv))
                              bindings))))
 
-(defn f-do-labels [defs env fenv]
+(defn f-do-labels [defs body env fenv]
   (let [fenv (extend-env fenv
                          (map first defs)
                          (repeat (count defs) 'void))]
     (doseq [[k bindings & body] defs]
-      (update! k fenv (f-make-function bindings body env fenv)))))
+      (update! k fenv (f-make-function bindings body env fenv)))
+    (f-eprogn body env fenv)))
 
 (defn f-evaluate [e env fenv]
   (match e
@@ -103,8 +104,10 @@
     (['function (sym :guard symbol?)] :seq) (f-lookup sym fenv)
     (['function (['lambda a & b] :seq)] :seq) (f-make-function a b env fenv)
     (['function & _] :seq) (wrong "Incorrect function" (second e))
+    (['funcall f & args] :seq) (invoke (f-evaluate f env fenv)
+                                       (f-evlis args env fenv))
     (['flet bindings & body] :seq) (f-do-flet bindings body env fenv)
-    (['labels defs] :seq) (f-do-labels defs env fenv)
+    (['labels defs & body] :seq) (f-do-labels defs body env fenv)
     ([f & args] :seq) (evaluate-application f (f-evlis args env fenv) env fenv)))
 
 (doto (k. lookup extend-env invoke f-evaluate
@@ -113,3 +116,57 @@
   t/main-tests
   t/late-missing-fn-test
   t/let-tests)
+
+;;=== Global environment
+
+(def env-global {})
+(def fenv-global {})
+
+(defn set-global [env-var var-name & value-seq]
+  (alter-var-root
+   env-var extend-env (list var-name) (if (seq value-seq)
+                                        value-seq
+                                        (list 'void))));; Why `void`?
+
+(def definitial* (partial set-global #'env-global))
+
+(definitial* 't true)
+(definitial* 'f 'the-false-value)
+(definitial* 'null ())  ;; nil isn't read as a symbol, so use null instead of adding an evaluate rule
+
+(def definitial-function* "p38"
+  (partial set-global #'fenv-global))
+
+(defn defprimitive* [var-name var-value arity]
+  (definitial-function* var-name
+    (fn [values]
+      (if (= arity (count values))
+        (apply var-value values)
+        (wrong "Incorrect arity"
+               (list var-name values))))))
+
+(defprimitive* 'car first 1)
+(defprimitive* 'cdr rest 1)
+(defprimitive* 'cons cons 2)
+(defprimitive* '= = 2)
+(defprimitive* '< < 2)
+(defprimitive* '> > 2)
+(defprimitive* '+ + 2)
+(defprimitive* '- - 2)
+(defprimitive* '* * 2)
+(defprimitive* list list 2)
+
+(defn eval* [expr]
+  (f-evaluate expr env-global fenv-global))
+
+(eval* '(labels ((fact (n) (if (= n 0)
+                             1
+                             (* n (fact (- n 1))))))
+                (fact 6)))
+
+(is (= 't
+       (eval*
+        '(funcall (labels ((even? (n) (if (= n 0) 't (odd? (- n 1))))
+                           (odd? (n) (if (= n 0) 'f (even? (- n 1)))))
+                          (function even?))
+                  4))))
