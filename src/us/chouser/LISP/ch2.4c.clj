@@ -1,6 +1,6 @@
 (ns us.chouser.LISP.ch2.4c
   "A Lisp2 with an f-lookup that always returns in constant time. p41-42
-   Try a multi-method dispatch for brevity."
+   Try a multi-method dispatch. I hoped it would be shorter -- it is not."
   (:require [clojure.test :refer [is]]
             [clojure.core.match :refer [match]]
             [us.chouser.spread :refer [k.]]
@@ -24,11 +24,6 @@
 
 (defn f-evlis [exps env fenv]
   (mapv #(feval % env fenv) exps))
-
-(defn f-eprogn [exps env fenv]
-  (transduce (map #(feval % env fenv))
-             (fn ([] ()) ([a] a) ([a b] b))
-             exps))
 
 (defn lookup [id env]
   (if-let [a (get env id)]
@@ -56,10 +51,6 @@
                 (merge (zipmap normal-vars (map atom normal-vals)))
                 (cond-> rest-var (assoc rest-var (atom rest-val)))))))
 
-(defn f-make-function [variables body env fenv]
-  (fn [values]
-    (f-eprogn body (extend-env env variables values) fenv)))
-
 (defn invoke [f args]
   (if (fn? f)
     (f args)
@@ -68,9 +59,9 @@
 (defn evaluate-application [f args env fenv]
   (match f
     (f :guard symbol?) ((f-lookup f fenv) args)
-    (['lambda params & body] :seq) (f-eprogn body
-                                             (extend-env env params args)
-                                             fenv)
+    (['lambda params & body] :seq) (feval (list* 'begin body)
+                                          (extend-env env params args)
+                                          fenv)
     :else (wrong "Incorrect functional term" f)))
 
 
@@ -88,28 +79,32 @@
   (if (feval p env fenv)
     (feval t env fenv)
     (feval f env fenv)))
-(defmethod feval [ISeq 'begin] [[_ & body] env fenv] (f-eprogn body env fenv))
+(defmethod feval [ISeq 'begin] [[_ & body] env fenv] ;; f-eprogn
+  (transduce (map #(feval % env fenv))
+             (fn ([] ()) ([a] a) ([a b] b)) ;; last
+             body))
 (defmethod feval [ISeq 'set!] [[_ k v] env fenv]
   (update! k env (feval v env fenv)))
 
-(defmethod feval [ISeq 'lambda] [[_ args & body] env fenv]
-  (f-make-function args body env fenv))
+(defmethod feval [ISeq 'lambda] [[_ args & body] env fenv] ;; f-make-function
+  #(feval (list* 'begin body) (extend-env env args %) fenv))
 (defmethod feval [ISeq 'let] [[_ bindings & body] env fenv]
-  (f-eprogn body
-            (reduce (fn [env [k e]]
-                      (extend-env env
-                                  (list k)
-                                  (list (feval e env fenv))))
-                    env
-                    bindings)
-            fenv))
+  (feval (list* 'begin body)
+         (reduce (fn [env [k e]]
+                   (extend-env env
+                               (list k)
+                               (list (feval e env fenv))))
+                 env
+                 bindings)
+         fenv))
 (defmethod feval [ISeq 'flet] [[_ bindings & body] env fenv]
-  (f-eprogn body env
-            (extend-env fenv
-                        (map first bindings)
-                        (map (fn [[_ vars & body]]
-                               (f-make-function vars body env fenv))
-                             bindings))))
+  (feval (list* 'begin body)
+         env
+         (extend-env fenv
+                     (map first bindings)
+                     (map (fn [[_ vars & body]]
+                            (feval (list* 'lambda vars body) env fenv))
+                          bindings))))
 (defmethod feval [ISeq 'funcall] [[_ f & args] env fenv]
   (invoke (feval f env fenv)
           (f-evlis args env fenv)))
@@ -119,8 +114,8 @@
                          (map first defs)
                          (repeat (count defs) 'void))]
     (doseq [[k bindings & body] defs]
-      (update! k fenv (f-make-function bindings body env fenv)))
-    (f-eprogn body env fenv)))
+      (update! k fenv (feval (list* 'lambda bindings body) env fenv)))
+    (feval (list* 'begin body) env fenv)))
 
 (defmethod feval [ISeq 'function] [[_ arg] env fenv]
   (if (symbol? arg)
