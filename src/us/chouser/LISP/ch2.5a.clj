@@ -94,6 +94,14 @@
                      bindings)
              fenv denv))
 
+(defn df-do-labels [defs body env fenv denv]
+  (let [fenv (extend-env fenv
+                         (map first defs)
+                         (repeat (count defs) 'void))]
+    (doseq [[k bindings & body] defs]
+      (update! k fenv (df-make-function bindings body env fenv)))
+    (df-eprogn body env fenv denv)))
+
 (defn df-invoke [f args denv]
   (if (fn? f)
     (f args denv)
@@ -117,7 +125,7 @@
     (['function (['lambda a & b] :seq)] :seq) (df-make-function a b env fenv)
     (['function & _] :seq) (wrong "Incorrect function" (second e))
     (['flet bindings & body] :seq) (df-do-flet bindings body env fenv denv)
-    (['labels defs] :seq) (wrong "TBD: lables") #_(f-do-labels defs env fenv)
+    (['labels defs & body] :seq) (df-do-labels defs body env fenv denv)
     (['dynamic k] :seq) (lookup k denv)
     (['dynamic-set! k v] :seq) (update! k denv (df-evaluate v env fenv denv))
     (['dynamic-let bds & body] :seq) (df-do-dynamic-let bds body env fenv denv)
@@ -144,9 +152,11 @@
   (defprimitive* 'car first 1)
   (defprimitive* 'cdr rest 1)
   (defprimitive* 'cons cons 2)
+  (defprimitive* '= = 2)
   (defprimitive* '< < 2)
   (defprimitive* '> > 2)
   (defprimitive* '+ + 2)
+  (defprimitive* '- - 2)
   (defprimitive* '* * 2)
 
   #_[*env *fenv]
@@ -216,3 +226,18 @@
                              (dynamic-let ((*some* 10))
                                           (add-some 5)))
                       @*env @*fenv denv))))
+
+(defn eval* [expr]
+  (df-evaluate expr @*env @*fenv denv))
+
+(eval* '(labels ((fact (n) (if (= n 0)
+                             1
+                             (* n (fact (- n 1))))))
+                (fact 6)))
+
+(is (= 't
+       (eval*
+        '(funcall (labels ((even? (n) (if (= n 0) 't (odd? (- n 1))))
+                           (odd? (n) (if (= n 0) 'f (even? (- n 1)))))
+                          (function even?))
+                  4))))
