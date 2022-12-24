@@ -7,7 +7,7 @@
 ;; lexical and dynamic environment, while still keeping the function environment.
 ;; It's so easy to get confused -- I was sure for a while that I needed to use a
 ;; form of cl-lookup for functions, but that's not right as this version doesn't
-;; have a environment dynamic environment for functions.
+;; have a dynamic environment for storing functions.
 
 (def env-global {})
 (def fenv-global {})
@@ -126,6 +126,14 @@
                      bindings)
              fenv denv))
 
+(defn df-do-labels [defs body env fenv denv]
+  (let [fenv (extend-env fenv
+                         (map first defs)
+                         (repeat (count defs) 'void))]
+    (doseq [[k bindings & body] defs]
+      (update! k fenv (df-make-function bindings body env fenv)))
+    (df-eprogn body env fenv denv)))
+
 (defn df-invoke [f args denv]
   (if (fn? f)
     (f args denv)
@@ -149,7 +157,7 @@
     (['function (['lambda a & b] :seq)] :seq) (df-make-function a b env fenv)
     (['function & _] :seq) (wrong "Incorrect function" (second e))
     (['flet bindings & body] :seq) (df-do-flet bindings body env fenv denv)
-    (['labels defs] :seq) (wrong "TBD: lables") #_(f-do-labels defs env fenv)
+    (['labels defs & body] :seq) (df-do-labels defs body env fenv denv)
     (['dynamic k] :seq) (lookup k denv)
     (['dynamic-let bds & body] :seq) (df-do-dynamic-let bds body env fenv denv)
     (['funcall fex & args] :seq) (df-invoke
@@ -187,9 +195,11 @@
 (defprimitive* 'car first 1)
 (defprimitive* 'cdr rest 1)
 (defprimitive* 'cons cons 2)
+(defprimitive* '= = 2)
 (defprimitive* '< < 2)
 (defprimitive* '> > 2)
 (defprimitive* '+ + 2)
+(defprimitive* '- - 2)
 (defprimitive* '* * 2)
 (defprimitive* list list 2)
 
@@ -253,3 +263,15 @@
                                          x x)))         ; dynamic
                                  (+ x                   ; lexical
                                     (dynamic x))))))))  ; dynamic
+
+(eval* '(labels ((fact (n) (if (= n 0)
+                             1
+                             (* n (fact (- n 1))))))
+                (fact 6)))
+
+(is (= 't
+       (eval*
+        '(funcall (labels ((even? (n) (if (= n 0) 't (odd? (- n 1))))
+                           (odd? (n) (if (= n 0) 'f (even? (- n 1)))))
+                          (function even?))
+                  4))))

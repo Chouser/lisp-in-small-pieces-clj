@@ -3,7 +3,7 @@
             [clojure.core.match :refer [match]]
             [clojure.test :as t :refer [is]]))
 
-;; This version drops the function environment, but keeps a dynamic environment and kj
+;; This version drops the function environment, but keeps a dynamic environment
 
 ;;=== Environment fns
 
@@ -71,6 +71,24 @@
                      bindings)
              denv))
 
+;; Not given in the text. Note the similarity to `labels`
+(defn dd-do-letrec [bindings body env denv]
+  (let [env (extend-env env
+                        (map first bindings)
+                        (repeat (count bindings) 'void))]
+    (doseq [[k e & body] bindings]
+      (update! k env (dd-evaluate e env denv)))
+    (dd-eprogn body env denv)))
+
+#_
+(defn dd-do-labels [defs body env denv]
+  (let [env (extend-env env
+                        (map first defs)
+                        (repeat (count defs) 'void))]
+    (doseq [[k bindings & body] defs]
+      (update! k env (df-make-function bindings body env fenv)))
+    (df-eprogn body env fenv denv)))
+
 (defn dd-evlis [e* env denv] ;; p51
   (mapv #(dd-evaluate % env denv) e*))
 
@@ -87,6 +105,7 @@
     (['set! k v] :seq) (update! k env (dd-evaluate v env denv))
     (['lambda args & body] :seq) (dd-make-function args body env)
     (['let bindings & body] :seq) (dd-do-let bindings body env denv)
+    (['letrec bindings & body] :seq) (dd-do-letrec bindings body env denv)
     ([f & args] :seq) (invoke (dd-evaluate f env denv)
                               (dd-evlis args env denv)
                               denv)))
@@ -118,9 +137,11 @@
 (defprimitive* 'car first 1)
 (defprimitive* 'cdr rest 1)
 (defprimitive* 'cons cons 2)
+(defprimitive* '= = 2)
 (defprimitive* '< < 2)
 (defprimitive* '> > 2)
 (defprimitive* '+ + 2)
+(defprimitive* '- - 2)
 (defprimitive* '* * 2)
 (defprimitive* list list 2)
 
@@ -165,12 +186,6 @@
                                                   (assoc/de 'x error))))
                                         (+ x (assoc/de 'x error)))))))))
 
-(is (= 400
-       (eval* '(+ (assoc/de 'x error)
-                  (let ((x (+ (assoc/de 'x error)
-                              (assoc/de 'x error))))
-                    (+ x (assoc/de 'x error)))))))
-
 (do ;; let-tests
   (is (= '2
          (eval* '(let ((a 2))
@@ -180,3 +195,15 @@
                    (let ((b 2))
                      (set! a 3))
                    a)))))
+
+(eval* '(letrec ((fact (lambda (n) (if (= n 0)
+                                     1
+                                     (* n (fact (- n 1)))))))
+                (fact 6)))
+
+(is (= 't
+       (eval*
+        '((letrec ((even? (lambda (n) (if (= n 0) 't (odd? (- n 1)))))
+                   (odd? (lambda (n) (if (= n 0) 'f (even? (- n 1))))))
+                  even?)
+          4))))
