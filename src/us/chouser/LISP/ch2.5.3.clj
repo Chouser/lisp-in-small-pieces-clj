@@ -3,7 +3,8 @@
             [clojure.core.match :refer [match]]
             [clojure.test :as t :refer [is]]))
 
-;; This version drops the function environment, but keeps a dynamic environment
+;; This version drops the function environment (and thus function, flet, labels,
+;; and funcall), but keeps a dynamic environment manipulated with bind/de and assoc/de
 
 ;;=== Environment fns
 
