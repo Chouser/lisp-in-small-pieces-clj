@@ -197,10 +197,11 @@
                      (set! a 3))
                    a)))))
 
-(eval* '(letrec ((fact (lambda (n) (if (= n 0)
-                                     1
-                                     (* n (fact (- n 1)))))))
-                (fact 6)))
+(is (= 720
+       (eval* '(letrec ((fact (lambda (n) (if (= n 0)
+                                            1
+                                            (* n (fact (- n 1)))))))
+                       (fact 6)))))
 
 (is (= 't
        (eval*
