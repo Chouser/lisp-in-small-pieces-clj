@@ -3,18 +3,22 @@
   that `letrec` can be a macro, written with Clojure idioms rather than literal
   Scheme translation."
   (:require [clojure.test :refer [is]]
-            [clojure.core.match :refer [match]]
-            [us.chouser.spread :refer [k.]]))
+            [clojure.core.match :refer [match]]))
 
 (defn wrong [msg & args]
   (throw (ex-info (apply str "WRONG: " msg " "
                          (interpose " " (map pr-str args)))
                   (reduce merge {} (map meta args)))))
 
-;; TODO: Update per p61
+(def the-uninitialized-marker (reify Object (toString [_] "uninitialized")))
+
 (defn lookup [id env]
   (if-let [a (get env id)]
-    @a
+    (let [v @a]
+      (if (= the-uninitialized-marker v)
+        (wrong "Uninitialized binding" id)
+        v)
+      @a)
     (wrong "No such binding" id)))
 
 (defn update! [id env value]
@@ -50,13 +54,24 @@
     (f args)
     (wrong "Not a function" f)))
 
-  ;; TODO: Update per p61
+;; p61: `let` with simultaneous bindings, supporting uninitialized variables
 (defn do-let [bindings body env]
   (eprogn body
-          (reduce (fn [env [k e]]
-                    (extend-env env (list k) (list (evaluate e env))))
-                  env
-                  bindings)))
+          (extend-env env
+                      (map #(if (symbol? %) % (first %)) bindings)
+                      (map #(if (symbol? %)
+                              the-uninitialized-marker
+                              (evaluate (second %) env))
+                           bindings))))
+
+(defn do-letrec [bindings body env]
+  (let [temps (map #(symbol (str "_temp_" %)) (range (count bindings)))]
+    (evaluate
+     `(~'let ~(map first bindings)
+       (~'let ~(map list temps (map second bindings))
+        ~@(map #(list 'set! %1 %2) (map first bindings) temps)
+        ~@body))
+     env)))
 
 (defn evlis [exps env]
   (mapv #(evaluate % env) exps))
@@ -74,6 +89,7 @@
          (['set! k v] :seq) (update! k env (evaluate v env))
          (['lambda args & body] :seq) (make-function args body env)
          (['let bindings & body] :seq) (do-let bindings body env)
+         (['letrec bindings & body] :seq) (do-letrec bindings body env)
          ([f & args] :seq) (invoke (evaluate f env) (evlis args env))))
 
 ;;=== Global environment
@@ -164,5 +180,17 @@
                                             (* n (fact (- n 1)))))))
                        (fact 6)))))
 
-:done
+(is (= 't
+       (eval*
+        '((letrec ((even? (lambda (n) (if (= n 0) 't (odd? (- n 1)))))
+                   (odd? (lambda (n) (if (= n 0) 'f (even? (- n 1))))))
+                  even?)
+          4))))
+
+(is (thrown-with-msg? Exception #"Uninitialized"
+                      (eval* '(letrec ((x (+ x 1))) x))))
+
+(is (thrown-with-msg? Exception #"No such"
+                      (eval* '(letrec ((x (+ y 1))) y))))
+
 ;; TODO: add tests for each use of wrong, and check for form/line/col debug info
