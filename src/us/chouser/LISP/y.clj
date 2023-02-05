@@ -106,18 +106,6 @@
                                               (apply (get @*impl-map k) args))]))
                                   (into {})))))))))
 
-(defn fixNN [maker-map]
-  (dupN
-   (update-vals maker-map
-                (fn [maker]
-                  (fn thing [thing-map]
-                    (let [*impl-map (delay (dupN thing-map))]
-                      (maker (->> thing-map
-                                  (map (fn [[k thing]]
-                                         [k (fn impl [& args]
-                                              (apply (get @*impl-map k) args))]))
-                                  (into {})))))))))
-
 (def odd-and-even
   (fixNN {:odd? (fn [impl-map]
                   (fn [n]
