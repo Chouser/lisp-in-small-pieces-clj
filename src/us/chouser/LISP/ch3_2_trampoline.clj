@@ -1,4 +1,4 @@
-(ns us.chouser.LISP.ch3-2
+(ns us.chouser.LISP.ch3-2-trampoline
   ""
   (:require [clojure.test :refer [is]]
             [clojure.core.match :refer [match]]))
@@ -7,8 +7,6 @@
   (throw (ex-info (apply str "WRONG: " msg " "
                          (interpose " " (map pr-str args)))
                   (reduce merge {} (map meta args)))))
-
-(declare evaluate)
 
 (def empty-begin (reify Object (toString [_] "empty-begin")))
 (def the-false-value (reify Object (toString [_] "the-false-value")))
@@ -39,6 +37,9 @@
 (defmethod resume :default [k v]
   (wrong "Unknown continuation" k))
 
+
+(defn evaluate [expr env k]
+  {:type ::eval, :expr expr, :env env, :k k})
 
 ;; (define-class if-cont continuation (et ef r)), p90
 (derive ::if-cont ::continutation)
@@ -164,20 +165,23 @@
         (dissoc :env)
         (update :k dissoc-env))))
 
-(defn evaluate [e env k]
+(defn eval-loop [e env k]
   #_(prn :e e :k (dissoc-env k))
-  (match e
-         (e :guard symbol?) (lookup e env k)
-         (e :guard #(or (not (coll? %)) (vector? %))) (resume k e)
-         (e :guard #(not (seq? %))) (wrong "Cannot evaluate" e)
-         (['quote x] :seq) (resume k x)
-         (['if p t f] :seq) (evaluate-if p t f env k)
-         (['begin & body] :seq) (evaluate-begin body env k)
-         (['set! variable value] :seq) (evaluate-set! variable value env k)
-         (['lambda args & body] :seq) (evaluate-lambda args body env k)
-         ;;(['let bindings & body] :seq) (do-let bindings body env k)
-         ;;(['letrec bindings & body] :seq) (do-letrec bindings body env k)
-         ([f & args] :seq) (evaluate-application f args env k)))
+  (let [z (match e
+                 (e :guard symbol?) (lookup e env k)
+                 (e :guard #(or (not (coll? %)) (vector? %))) (resume k e)
+                 (e :guard #(not (seq? %))) (wrong "Cannot evaluate" e)
+                 (['quote x] :seq) (resume k x)
+                 (['if p t f] :seq) (evaluate-if p t f env k)
+                 (['begin & body] :seq) (evaluate-begin body env k)
+                 (['set! variable value] :seq) (evaluate-set! variable value env k)
+                 (['lambda args & body] :seq) (evaluate-lambda args body env k)
+                 ;;(['let bindings & body] :seq) (do-let bindings body env k)
+                 ;;(['letrec bindings & body] :seq) (do-letrec bindings body env k)
+                 ([f & args] :seq) (evaluate-application f args env k))]
+    (if (= :done (:type z))
+      (:value z)
+      (recur (:expr z) (:env z) (:k z)))))
 
 ;;=== Global environment
 
@@ -219,17 +223,10 @@
 (defprimitive* list list 2)
 
 (defmethod resume 'top-eval [k v]
-  v
-  #_
-  (deliver (:promise k) v))
+  {:type :done, :value v})
 
 (defn eval* [expr]
-  (evaluate expr env-global {:type 'top-eval})
-  #_
-  (let [p (promise)]
-    (evaluate expr env-global {:type 'top-eval
-                               :promise p})
-    @p))
+  (eval-loop expr env-global {:type 'top-eval}))
 
 (is (= 1  (eval* '((lambda (a b) a) 1 2))))
 (is (= 'a (eval* '(if true (quote a) 2))))
@@ -249,6 +246,6 @@
                       (fact fact n))
               (lambda (fact n)
                       (if (< n 2)
-                        1
+                        1N
                         (* n (fact fact (- n 1)))))
-              20))))
+              50))))
