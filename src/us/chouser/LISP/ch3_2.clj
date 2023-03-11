@@ -249,6 +249,6 @@
                       (fact fact n))
               (lambda (fact n)
                       (if (< n 2)
-                        1
+                        1N
                         (* n (fact fact (- n 1)))))
               20))))

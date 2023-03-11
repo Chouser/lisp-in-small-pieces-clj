@@ -209,6 +209,7 @@
                   (wrong "Incorrect arity"
                          (list var-name values))))}))
 (defmethod invoke ::primitive [f values env k]
+  #_(prn :stackdepth (count (:trace (Throwable->map (ex-info "" {})))))
   ((:address f) values env k))
 
 (defprimitive* 'car first 1)
@@ -241,11 +242,36 @@
 
 (is (= 9 (eval* '((lambda (a b) (+ a b)) 3 6))))
 
-(is (= 120 (eval*
-            '((lambda (fact n)
-                      (fact fact n))
-              (lambda (fact n)
-                      (if (< n 2)
-                        1N
-                        (* n (fact fact (- n 1)))))
-              50))))
+#_
+(time
+ (is (= :tbd
+        (eval*
+         '((lambda (fact n)
+                   (fact fact n))
+           (lambda (fact n)
+                   (if (< n 2)
+                     1N
+                     (+ n (fact fact (- n 1)))))
+           10000)))))
+
+(time
+ (eval*
+  '((lambda (fact a n)
+            (fact fact a n))
+    (lambda (fact a n)
+            (if (< n 1)
+              a
+              (fact fact (+ n a) (- n 1))))
+    1
+    20)))
+
+#_
+(is (= :tbd
+       (eval*
+        '((lambda (x2 n)
+                  (x2 x2 n))
+          (lambda (x2 n)
+                  (if (< n 2)
+                    1
+                    (+ (x2 x2 (- n 1)))))
+          50))))
